@@ -1,4 +1,4 @@
-package payload_extract
+package payload_extract_go
 
 import (
 	"bytes"
@@ -9,208 +9,367 @@ import (
 	"io"
 	"log"
 	"os"
+	"path"
+	"slices"
 	"sort"
-	"strconv"
+	"sync"
 
-	"github.com/affggh/payload_extract/update_metadata"
-	"github.com/ulikunitz/xz"
-	"google.golang.org/protobuf/proto"
+	"github.com/affggh/payload_extract/update_engine"
+	"github.com/jamespfennell/xz" // c wraped lib have good performance than pure go impl
+	"github.com/panjf2000/ants/v2"
+	"github.com/schollz/progressbar/v3"
 )
 
-func badPayload(msg any) error {
-	switch msg := msg.(type) {
+var Logger = log.New(log.Writer(), "payload_extract:", log.Flags())
+
+const PAYLOAD_MAGIC = "CrAU"
+
+func BadPayload(msg any) error {
+	switch v := msg.(type) {
 	case string:
-		return errors.New("invalid payload: " + msg)
+		return errors.New("invalid payload: " + v)
+	case error:
+		return fmt.Errorf("invalid payload: %w", v)
+	case fmt.Stringer:
+		return errors.New("invalid payload: " + v.String())
 	default:
 		return fmt.Errorf("invalid payload: %v", msg)
 	}
 }
 
-const PAYLOAD_MAGIC = "CrAU"
-
-type PayloadCommonHdr struct {
+type PayloadHdr struct {
 	Magic          [4]byte
 	Version        uint64
 	ManifestLen    uint64
 	ManifestSigLen uint32
 }
 
-func doExtractBootFromPayload(
-	in_path string,
-	partition_name *string,
-	out_path *string,
-) error {
-	reader := func() *os.File {
-		if in_path == "-" {
-			return os.Stdin
-		} else {
-			fd, err := os.Open(in_path)
-			if err != nil {
-				log.Fatalln(err)
-			}
-			return fd
-		}
-	}()
-
-	hdr := PayloadCommonHdr{}
-
-	err := binary.Read(reader, binary.BigEndian, &hdr)
-	if err != nil {
-		return err
+func (p *PayloadHdr) Decode(data []byte) error {
+	if len(data) < binary.Size(*p) {
+		return BadPayload("invalid data size to decode to hdr")
 	}
+
+	_, err := binary.Decode(data, binary.BigEndian, p)
+	return err
+}
+
+func (p *PayloadHdr) HdrSize() int {
+	return binary.Size(*p)
+}
+
+func InitPayloadInfo(reader io.ReadSeeker) (*update_engine.DeltaArchiveManifest, error) {
+	hdr := PayloadHdr{}
+
+	binary.Read(reader, binary.BigEndian, &hdr)
+
+	//fmt.Printf("%v\n", hdr)
 
 	if !bytes.Equal(hdr.Magic[:], []byte(PAYLOAD_MAGIC)) {
-		return badPayload("invalid magic")
+		return nil, BadPayload("invalid magic")
 	}
-
 	if hdr.Version != 2 {
-		return badPayload("unsupported version: " + strconv.FormatUint(hdr.Version, 10))
+		Logger.Println("Warning: payload version is", hdr.Version, "which is not equal to 2!")
 	}
-
 	if hdr.ManifestLen == 0 {
-		return badPayload("manifest length is zero")
+		return nil, BadPayload("manifest length is zero")
 	}
-
 	if hdr.ManifestSigLen == 0 {
-		return badPayload("manifest signature length is zero")
+		return nil, BadPayload("manifest signature length is zero")
 	}
 
+	manifest := new(update_engine.DeltaArchiveManifest)
 	buf := make([]byte, hdr.ManifestLen)
-	reader.Read(buf)
-	manifest := new(update_metadata.DeltaArchiveManifest)
-	if err := proto.Unmarshal(buf, manifest); err != nil {
-		return err
-	}
-	if manifest.GetMinorVersion() != 0 {
-		return badPayload("delta payloads are not supported, please use a full payload file")
-	}
-
-	block_size := manifest.GetBlockSize()
-
-	partition := func() *update_metadata.PartitionUpdate {
-		switch partition_name {
-		case nil:
-			var boot *update_metadata.PartitionUpdate = nil
-			for _, p := range manifest.GetPartitions() {
-				if p.GetPartitionName() == "init_boot" {
-					boot = p
-					break
-				}
-			}
-			boot = func() *update_metadata.PartitionUpdate {
-				if boot == nil {
-					for _, p := range manifest.GetPartitions() {
-						if p.GetPartitionName() == "boot" {
-							return p
-						}
-					}
-					return nil
-				} else {
-					return boot
-				}
-			}()
-			if boot != nil {
-				log.Fatalln(badPayload("boot partition not found"))
-			}
-		default:
-			for _, p := range manifest.GetPartitions() {
-				if p.GetPartitionName() == *partition_name {
-					return p
-				}
-			}
-			log.Fatalln(badPayload("partition " + *partition_name + " not found"))
-		}
-		return nil
-	}()
-
-	var out_str string
-	out_path = func() *string {
-		switch out_path {
-		case nil:
-			out_str = fmt.Sprintf("%s.img", partition.GetPartitionName())
-			return &out_str
-		default:
-			return out_path
-		}
-	}()
-
-	out_file, err := os.Create(*out_path)
+	_, err := reader.Read(buf)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer out_file.Close()
 
-	// Skip the manifest signature
-	io.CopyN(io.Discard, reader, int64(hdr.ManifestSigLen))
+	if err = manifest.Unmarshal(buf); err != nil {
+		return nil, err
+	}
 
-	operations := partition.GetOperations()
-	sort.Slice(operations, func(i, j int) bool {
-		return operations[i].GetDataOffset() < operations[j].GetDataOffset()
-	})
+	if manifest.GetMinorVersion() != 0 {
+		return nil, BadPayload("delta payloads are not supported, please use a full payload file")
+	}
 
-	var curr_data_offset uint64 = 0
+	// Skip signature
+	reader.Seek(int64(hdr.ManifestSigLen), io.SeekCurrent)
+	//io.CopyN(io.Discard, reader, int64(hdr.ManifestSigLen))
 
-	for _, operation := range operations {
-		data_len := operation.GetDataLength()
-		data_offset := operation.GetDataOffset()
+	return manifest, nil
+}
 
-		data_type := operation.GetType()
-
-		buf = make([]byte, data_len)
-
-		// Skip to the next offset and read data
-		skip := data_offset - curr_data_offset
-		io.CopyN(io.Discard, reader, int64(skip))
-		reader.Read(buf)
-		curr_data_offset = data_offset + data_len
-
-		out_offset := operation.GetDstExtents()[0].GetStartBlock() * uint64(block_size)
-
-		switch data_type {
-		case update_metadata.InstallOperation_REPLACE:
-			out_file.Seek(int64(out_offset), io.SeekStart)
-			out_file.Write(buf)
-		case update_metadata.InstallOperation_ZERO:
-			for _, ext := range operation.GetDstExtents() {
-				out_seek := ext.GetStartBlock() * uint64(block_size)
-				num_blocks := ext.GetNumBlocks()
-				out_file.Seek(int64(out_seek), io.SeekStart)
-				out_file.Write(make([]byte, num_blocks))
+func PrintPartitionsInfo(manifest *update_engine.DeltaArchiveManifest, partitions_name []string) {
+	fmt.Println("Payload Info:")
+	fmt.Println("\tPatch Level:", manifest.SecurityPatchLevel)
+	fmt.Println("\tBlock Size:", *manifest.BlockSize)
+	fmt.Println("\tMinor Version:", *manifest.MinorVersion)
+	fmt.Println("\tMax Time Stamp:", manifest.MaxTimestamp)
+	fmt.Println("\tApex Info:", len(manifest.ApexInfo))
+	fmt.Println("\t\t", "PackageName", "Version", "IsCompressed", "DecompressedSize")
+	for _, i := range manifest.ApexInfo {
+		fmt.Println("\t\t", i.PackageName, i.Version, i.IsCompressed, i.DecompressedSize)
+	}
+	fmt.Println("\tPartitions:", len(manifest.Partitions))
+	fmt.Println("\t\t", "PartitionName", "PartitionSize")
+	parts := make([]*update_engine.PartitionUpdate, 0)
+	if len(partitions_name) == 0 {
+		parts = manifest.Partitions
+	} else {
+		for _, p := range manifest.Partitions {
+			if slices.ContainsFunc(partitions_name, func(part string) bool {
+				return p.PartitionName == part
+			}) {
+				parts = append(parts, p)
 			}
-		case update_metadata.InstallOperation_REPLACE_BZ:
-			reader := bzip2.NewReader(bytes.NewReader(buf))
-			out_file.Seek(int64(out_offset), io.SeekStart)
-			io.Copy(out_file, reader)
-		case update_metadata.InstallOperation_REPLACE_XZ:
-			reader, err := xz.NewReader(bytes.NewReader(buf))
-			if err != nil {
-				log.Fatalln(err)
-			}
-			out_file.Seek(int64(out_offset), io.SeekStart)
-			io.Copy(out_file, reader)
-
-		default:
-			return badPayload("unsupported operation type")
 		}
 	}
+	for _, p := range parts {
+		partition_size := func() int64 {
+			last_operation, _ := last(p.Operations)
+			last_extents, _ := last(last_operation.DstExtents)
+
+			return int64((last_extents.StartBlock + last_extents.NumBlocks) * uint64(*manifest.BlockSize))
+		}()
+
+		fmt.Printf("\t\t %-14s%d\n", p.PartitionName, partition_size)
+	}
+}
+
+// 1MB Zero buffer
+var zero_buffer = make([]byte, 1<<20)
+
+func write_zero(writer io.WriterAt, size int64, offset int64) (int64, error) {
+	total_write := int64(0)
+	for total_write < size {
+		bytesToWrite := int64(len(zero_buffer))
+		if total_write+bytesToWrite > size {
+			bytesToWrite = size - total_write
+		}
+
+		n, err := writer.WriteAt(zero_buffer[:bytesToWrite], total_write+offset)
+		if err != nil {
+			return total_write, err
+		}
+		total_write += int64(n)
+
+		if n == 0 && bytesToWrite > 0 {
+			return total_write, io.ErrNoProgress
+		}
+	}
+	return total_write, nil
+}
+
+func extractOperationToFile(
+	operation *update_engine.InstallOperation,
+	writer io.WriterAt,
+	out_offset int64,
+	block_size int,
+	data []byte,
+	progress_bar *progressbar.ProgressBar,
+	wg *sync.WaitGroup,
+) error {
+	defer wg.Done()
+	var write_len int
+	var err error
+	switch operation.Type {
+	case update_engine.REPLACE:
+		write_len, err = writer.WriteAt(data, out_offset)
+		if err != nil {
+			return err
+		}
+	case update_engine.ZERO:
+		for _, ext := range operation.GetDstExtents() {
+			out_seek := ext.StartBlock * uint64(block_size)
+			num_blocks := ext.NumBlocks
+
+			xlen, err := write_zero(writer, int64(num_blocks), int64(out_seek))
+			if err != nil {
+				return err
+			}
+			write_len += int(xlen)
+		}
+	case update_engine.REPLACE_BZ, update_engine.REPLACE_XZ:
+		var zreader io.Reader
+		var breader = bytes.NewReader(data)
+		if operation.Type == update_engine.REPLACE_BZ {
+			zreader = bzip2.NewReader(breader)
+		} else if operation.Type == update_engine.REPLACE_XZ {
+			zreader = xz.NewReader(breader)
+		}
+
+		closer, ok := zreader.(io.Closer)
+		if ok { // lzma need close
+			defer closer.Close()
+		}
+
+		w := io.NewOffsetWriter(writer, out_offset)
+		if l, err := io.Copy(w, zreader); err != nil {
+			return err
+		} else {
+			write_len = int(l)
+		}
+	default:
+		return BadPayload("unexpcted data type")
+	}
+
+	progress_bar.Add(write_len)
 	return nil
 }
 
-func ExtractBootFromPayload(in_path, partition, out_path string) bool {
-	var p, o *string = nil, nil
-
-	if len(partition) != 0 {
-		p = &partition
-	}
-	if len(out_path) != 0 {
-		o = &out_path
-	}
-
-	err := doExtractBootFromPayload(in_path, p, o)
+func extractPartitionFromPayload(
+	reader io.ReadSeeker,
+	block_size int,
+	partition *update_engine.PartitionUpdate,
+	out_path string,
+	total_size int,
+	bar *progressbar.ProgressBar,
+	pool *ants.Pool,
+) error {
+	fd, err := os.Create(out_path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to extract from payload")
-		fmt.Fprintln(os.Stderr, err)
-		return false
+		return err
 	}
-	return true
+	defer fd.Close()
+
+	err = fd.Truncate(int64(total_size))
+	if err != nil {
+		defer os.Remove(out_path)
+		return err
+	}
+
+	curr_data_offset := int64(0)
+
+	operations := partition.Operations
+	sort.Slice(operations, func(i, j int) bool {
+		return operations[i].DataOffset < operations[j].DataOffset
+	})
+
+	var wg sync.WaitGroup
+	//p, _ := ants.NewPool(runtime.NumCPU())
+	//Logger.Println("Process", partition.GetPartitionName(), "with threads:", runtime.NumCPU())
+	//defer p.Release()
+
+	for _, operation := range operations {
+		data_len := operation.DataLength
+		data_offset := operation.DataOffset
+
+		reader.Seek(int64(data_offset)-curr_data_offset, io.SeekCurrent)
+
+		//data, err := io.ReadAll(io.LimitReader(reader, int64(data_len)))
+		//if err != nil {
+		//	return err
+		//}
+		data := make([]byte, data_len)
+		_, err = reader.Read(data)
+		if err != nil {
+			return err
+		}
+
+		curr_data_offset = int64(data_offset + data_len)
+		wg.Add(1)
+		err = pool.Submit(func() {
+			err := extractOperationToFile(
+				operation,
+				fd,
+				int64(operation.GetDstExtents()[0].GetStartBlock()*uint64(block_size)),
+				block_size,
+				data,
+				bar,
+				&wg,
+			)
+			if err != nil {
+				Logger.Printf("Error: %v", err)
+			}
+		})
+		if err != nil {
+			return err
+		}
+	}
+	wg.Wait()
+
+	return nil
+}
+
+// go1.18+
+func last[T any](s []T) (T, bool) {
+	if len(s) == 0 {
+		var zero T
+		return zero, false
+	}
+	return s[len(s)-1], true
+}
+
+func ExtractPartitionsFromPayload(
+	reader io.ReadSeeker,
+	partitions_name []string,
+	out_dir string,
+	max_workers int,
+) {
+	reader.Seek(0, io.SeekStart)
+
+	os.RemoveAll(out_dir)
+	os.MkdirAll(out_dir, 0777)
+
+	manifest, err := InitPayloadInfo(reader)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	baseoff, _ := reader.Seek(0, io.SeekCurrent)
+
+	var all_parts []*update_engine.PartitionUpdate
+	if len(partitions_name) == 0 { // Extract all
+		all_parts = manifest.Partitions
+	} else {
+		for _, p := range manifest.Partitions {
+			if slices.Contains(partitions_name, p.PartitionName) {
+				all_parts = append(all_parts, p)
+			}
+		}
+	}
+
+	block_size := *manifest.BlockSize
+
+	pool, _ := ants.NewPool(max_workers)
+	defer pool.Release()
+
+	fmt.Println("Processing with threads:", max_workers)
+
+	for idx, p := range all_parts {
+		reader.Seek(baseoff, io.SeekStart)
+
+		total_length := func() int64 {
+			last_operation, _ := last(p.Operations)
+			last_extents, _ := last(last_operation.DstExtents)
+
+			return int64((last_extents.StartBlock + last_extents.NumBlocks) * uint64(block_size))
+		}()
+
+		bar := progressbar.NewOptions64(total_length,
+			progressbar.OptionSetWriter(os.Stderr), //you should install "github.com/k0kubun/go-ansi"
+			progressbar.OptionEnableColorCodes(true),
+			progressbar.OptionShowBytes(true),
+			progressbar.OptionShowTotalBytes(true),
+			progressbar.OptionClearOnFinish(),
+			progressbar.OptionSetWidth(15),
+			progressbar.OptionSetDescription(fmt.Sprintf("[cyan][%d/%d][reset] Partition %-12s size: %-10d ...", idx+1, len(all_parts), p.GetPartitionName(), total_length)),
+			progressbar.OptionSetTheme(progressbar.Theme{
+				Saucer:        "[green]#[reset]",
+				SaucerHead:    "[green]>[reset]",
+				SaucerPadding: "_",
+				BarStart:      "[",
+				BarEnd:        "]",
+			}))
+
+		fmt.Println("Extracting", p.PartitionName, "...")
+		err := extractPartitionFromPayload(reader, int(block_size), p, path.Join(out_dir, p.PartitionName+".img"), int(total_length), bar, pool)
+		if err != nil {
+			log.Println(err)
+		}
+
+		bar.Finish()
+	}
+
+	fmt.Println("Done!")
 }
