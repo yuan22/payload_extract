@@ -15,7 +15,7 @@ import (
 	"sync"
 
 	"github.com/affggh/payload_extract/update_engine"
-	"github.com/jamespfennell/xz" // c wraped lib have good performance than pure go impl
+	"github.com/jamespfennell/xz" // c wrapped lib have good performance than pure go impl
 	"github.com/panjf2000/ants/v2"
 	"github.com/schollz/progressbar/v3"
 )
