@@ -10,10 +10,10 @@ example on archlinux:`sudo pacman -S gcc base-devel`
 
 ## Example build for windows on archlinux
 - Install mingw32    
-`sudo pacman -S mingw-w64-gcc`
+```sudo pacman -S mingw-w64-gcc```
 - Build with cross toolchain
 _Example build for windows:_    
-`GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ CGO_ENABLED=1 go build -ldflags="-s -w" -trimpath -o payload_extract_go.exe cmd/main.go` 
+```GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ CGO_ENABLED=1 go build -ldflags="-s -w" -trimpath -o payload_extract_go.exe cmd/main.go```
 
 # Usage
 ```
