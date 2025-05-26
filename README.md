@@ -4,19 +4,28 @@ Golang impl this, another python impl here:[payload_extract_py](https://github.c
 # Build
 ## Native
 - Install gcc    
-example on archlinux:`sudo pacman -S gcc base-devel`
+example on archlinux:
+```sh
+sudo pacman -S gcc base-devel
+```
 - Build
-`go build -ldflags="-s -w" -trimpath -o payload_extract_go cmd/main.go`
+```sh
+go build -ldflags="-s -w" -trimpath -o payload_extract_go cmd/main.go
+```
 
 ## Example build for windows on archlinux
 - Install mingw32    
-```sudo pacman -S mingw-w64-gcc```
+```sh
+sudo pacman -S mingw-w64-gcc
+```
 - Build with cross toolchain
 _Example build for windows:_    
-```GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ CGO_ENABLED=1 go build -ldflags="-s -w" -trimpath -o payload_extract_go.exe cmd/main.go```
+```sh
+GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ CGO_ENABLED=1 go build -ldflags="-s -w" -trimpath -o payload_extract_go.exe cmd/main.go
+```
 
 # Usage
-```
+```sh
 Usage of ./main:
   -P    do not extract, print partitions info
   -T int
