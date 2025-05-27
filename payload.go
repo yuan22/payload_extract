@@ -15,7 +15,8 @@ import (
 	"sync"
 
 	"github.com/affggh/payload_extract/update_engine"
-	"github.com/jamespfennell/xz" // c wrapped lib have good performance than pure go impl
+	"github.com/spencercw/go-xz"
+
 	"github.com/panjf2000/ants/v2"
 	"github.com/schollz/progressbar/v3"
 )
@@ -195,7 +196,8 @@ func extractOperationToFile(
 		if operation.Type == update_engine.REPLACE_BZ {
 			zreader = bzip2.NewReader(breader)
 		} else if operation.Type == update_engine.REPLACE_XZ {
-			zreader = xz.NewReader(breader)
+			xzreader := xz.NewDecompressionReader(breader)
+			zreader = &xzreader
 		}
 
 		closer, ok := zreader.(io.Closer)

@@ -4,7 +4,7 @@ go 1.24.2
 
 require github.com/gogo/protobuf v1.3.2
 
-require github.com/jamespfennell/xz v0.1.2
+require github.com/spencercw/go-xz v0.0.0-20181128201811-c82a2123b492
 
 require (
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
