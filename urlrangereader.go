@@ -5,6 +5,7 @@ package payload_extract_go
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -15,8 +16,8 @@ type ReaderAtCloser interface {
 	Close() error
 }
 
-// Define a default User-Agent string to simulate a browser
-const defaultUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+// Define a default User-Agent string to simulate a browser with oppo header
+const defaultUserAgent = "Dalvik/2.1.0 (Linux; U; Android 15; RMX5010 Build/AP3A.240617.008)"
 
 // UrlRangeReaderAt reads data from a URL supporting HTTP Range requests.
 // It implements io.ReaderAt and attempts to reuse the underlying HTTP stream
@@ -46,10 +47,18 @@ func NewUrlRangeReaderAt(url string) *UrlRangeReaderAt {
 		//Timeout: 30 * time.Second, // Example timeout
 	}
 
-	resp, err := defaultClient.Head(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	req.Header.Add("User-Agent", defaultUserAgent)
+
+	resp, err := defaultClient.Do(req)
 	if err != nil {
 		Logger.Fatalln(err)
 	}
+	//fmt.Printf("Header: %v Code:%d\n", resp.Header, resp.StatusCode)
+
 	total, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
 	if err != nil {
 		Logger.Fatalln(err)
@@ -134,6 +143,7 @@ func (r *UrlRangeReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
 			return 0, fmt.Errorf("UrlRangeReaderAt.ReadAt: failed to create request for offset %d: %w", off, httpErr)
 		}
 
+		req.Header.Del("Accept-Encoding") // sick oppo
 		// Set the Range header: bytes=start-end (inclusive)
 		endOff := off + int64(len(p)) - 1
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", off, endOff))

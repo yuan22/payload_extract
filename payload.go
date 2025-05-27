@@ -90,7 +90,8 @@ func InitPayloadInfo(reader io.ReadSeeker) (*update_engine.DeltaArchiveManifest,
 	}
 
 	if manifest.GetMinorVersion() != 0 {
-		return nil, BadPayload("delta payloads are not supported, please use a full payload file")
+		//return nil, BadPayload("delta payloads are not supported, please use a full payload file")
+		Logger.Println("detect delta payloads may not supported, please use a full payload file")
 	}
 
 	// Skip signature
