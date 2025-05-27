@@ -1,0 +1,51 @@
+cmake_minimum_required(VERSION 3.20)
+project(payload_extract_go)
+
+find_package(LibLZMA REQUIRED)
+
+set(TARGET_NAME ${PROJECT_NAME})
+if(WIN32)
+    set(TARGET_NAME "${TARGET_NAME}.exe")
+endif()
+
+set(GO_SOURCES cmd/main.go)
+set(GO_FLAGS "-trimpath")
+
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    list(APPEND GO_FLAGS "-ldflags=-s -w")
+endif()
+
+if (NOT VCPKG_HOME)
+    message(ERROR "$VCPKG_HOME must be set!")
+endif ()
+
+if (NOT VCPKG_TARGET_TRIPLET)
+    message(ERROR "$VCPKG_TRIPLET must be set!")
+endif ()
+
+if(NOT LibLZMA_LIBRARY_DIRS)
+    set(LibLZMA_LIBRARY_DIRS "${VCPKG_HOME}/installed/${VCPKG_TARGET_TRIPLET}/lib")
+endif()
+
+if(NOT LibLZMA_INCLUDE_DIRS)
+    set(LibLZMA_INCLUDE_DIRS "${VCPKG_HOME}/installed/${VCPKG_TARGET_TRIPLET}/include")
+endif()
+
+set(CGO_ENV
+    "CGO_ENABLED=1"
+    "CGO_CFLAGS=-O2 -I${LibLZMA_INCLUDE_DIRS}"
+    "CGO_LDFLAGS=-O2 -L${LibLZMA_LIBRARY_DIRS} -llzma"
+)
+
+add_custom_target(build_all ALL
+    COMMAND ${CMAKE_COMMAND} -E env ${CGO_ENV}
+        go build ${GO_FLAGS} -o ${CMAKE_BINARY_DIR}/${TARGET_NAME} ${GO_SOURCES}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS ${GO_SOURCES}
+    COMMENT "Building Go executable with LibLZMA linking"
+)
+
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_NAME}
+    DESTINATION bin
+    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+)
