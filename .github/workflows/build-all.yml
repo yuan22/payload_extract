@@ -18,7 +18,13 @@ jobs:
 
     - name: Setup build environment
       run: |
-        sudo apt install -y build-essential cmake ninja-build musl musl-dev musl-tools
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          musl-tools \
+          clang
 
     - name: Setup Go
       uses: actions/setup-go@v4
@@ -37,6 +43,4 @@ jobs:
       # This builds executables & sets env variables for rust to consume.
       with:
         osx-version: "12.3"
-
-    - name: Setup 
       
