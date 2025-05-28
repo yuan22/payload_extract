@@ -68,7 +68,7 @@ jobs:
         cp -af build/payload_extract_go $OUTDIR/
       
     - name: Upload linux artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: linux-binaries
         path: out/x86_64-linux-*/
