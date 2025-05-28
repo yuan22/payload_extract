@@ -44,3 +44,24 @@ jobs:
       with:
         osx-version: "12.3"
       
+    - name: Setup vcpkg
+      run: |
+        git clone https://github.com/microsoft/vcpkg.git
+        ./vcpkg/bootstrap-vcpkg.sh
+        echo "$GITHUB_WORKSPACE/vcpkg" >> $GITHUB_PATH
+
+    - name: Build linux binaries
+      env:
+        CC: musl-gcc
+        GOOS: linux
+        GOARCH: amd64
+        VCPKG_TARGET_TRIPLET: x64-linux
+      run: |
+        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE="Release" -DVCPKG_HOME="$VCPKG_HOME" \
+          -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+          -DVCPKG_TARGET_TRIPLET="x64-linux" \
+          -DVCPKG_HOME="$GITHUB_WORKSPACE/vcpkg" \
+          -DSTATIC=ON && cmake --build build --verbose
+        OUTDIR="out/x86_64-linux-$(git rev-parse --short HEAD)/"
+        cp -af build/payload_extract_go $OUTDIR/
+      
