@@ -24,7 +24,7 @@ jobs:
           cmake \
           ninja-build \
           musl-tools \
-          clang
+          clang p7zip
 
     - name: Setup Go
       uses: actions/setup-go@v4
@@ -56,6 +56,7 @@ jobs:
         GOOS: linux
         GOARCH: amd64
         VCPKG_TARGET_TRIPLET: x64-linux
+      id: linux-build
       run: |
         vcpkg install --triplet=$VCPKG_TARGET_TRIPLET liblzma
         cmake -B build -G Ninja -DCMAKE_BUILD_TYPE="Release" -DVCPKG_HOME="$VCPKG_HOME" \
@@ -66,3 +67,8 @@ jobs:
         OUTDIR="out/x86_64-linux-$(git rev-parse --short HEAD)/"
         cp -af build/payload_extract_go $OUTDIR/
       
+    - name: Upload linux artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: linux-binaries
+        path: out/x86_64-linux-*/
