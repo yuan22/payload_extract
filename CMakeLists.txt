@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
-project(payload_extract_go)
+project(payload_extract_go VERSION 0.1.1)
+
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_COMMIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+set(PROJECT_VERSION_FULL "${PROJECT_VERSION}.${GIT_COMMIT_HASH}")
 
 find_package(LibLZMA REQUIRED)
 
@@ -11,8 +20,13 @@ endif()
 set(GO_SOURCES cmd/main.go)
 set(GO_FLAGS "-trimpath")
 
+# static build
+if (STATIC)
+    set(GO_STATIC_FLAGS "-extldflags='-static'")
+endif ()
+
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    list(APPEND GO_FLAGS "-ldflags=-s -w")
+    list(APPEND GO_FLAGS "-ldflags=-s -w ${GO_STATIC_FLAGS}")
 endif()
 
 if (NOT VCPKG_HOME)
