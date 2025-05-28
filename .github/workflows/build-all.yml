@@ -39,7 +39,7 @@ jobs:
         add-to-path: false
 
     - name: Setup OSX toolchains
-      uses: Timmmm/setup-osxcross@v1
+      uses: Timmmm/setup-osxcross@v3
       # This builds executables & sets env variables for rust to consume.
       with:
         osx-version: "12.3"
