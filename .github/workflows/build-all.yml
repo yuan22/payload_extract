@@ -1,0 +1,74 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Build-All
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup build environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          musl-tools \
+          clang p7zip
+
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+
+    - name: Setup Ndk toolchains
+      uses: nttld/setup-ndk@v1
+      id: setup-ndk
+      with:
+        ndk-version: r21e
+        add-to-path: false
+
+    - name: Setup OSX toolchains
+      uses: Timmmm/setup-osxcross@v3
+      # This builds executables & sets env variables for rust to consume.
+      with:
+        osx-version: "12.3"
+      
+    - name: Setup vcpkg
+      run: |
+        git clone https://github.com/microsoft/vcpkg.git
+        ./vcpkg/bootstrap-vcpkg.sh
+        echo "$GITHUB_WORKSPACE/vcpkg" >> $GITHUB_PATH
+
+    - name: Build linux binaries
+      env:
+        CC: musl-gcc
+        GOOS: linux
+        GOARCH: amd64
+        VCPKG_TARGET_TRIPLET: x64-linux
+      id: linux-build
+      run: |
+        vcpkg install --triplet=$VCPKG_TARGET_TRIPLET liblzma
+        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE="Release" -DVCPKG_HOME="$VCPKG_HOME" \
+          -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+          -DVCPKG_TARGET_TRIPLET="x64-linux" \
+          -DVCPKG_HOME="$GITHUB_WORKSPACE/vcpkg" \
+          -DSTATIC=ON && cmake --build build --verbose
+        OUTDIR="out/x86_64-linux-$(git rev-parse --short HEAD)/"
+        cp -af build/payload_extract_go $OUTDIR/
+      
+    - name: Upload linux artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-binaries
+        path: out/x86_64-linux-*/
