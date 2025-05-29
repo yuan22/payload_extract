@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -26,22 +27,26 @@ const (
 	TYPE_URL
 )
 
+const Version = "Unknow-dirty"
+
 type config struct {
-	input      string
-	outdir     string
-	partitions []string
-	workers    int
-	act        action
-	_type      payload_type
+	input       string
+	outdir      string
+	partitions  []string
+	workers     int
+	act         action
+	_type       payload_type
+	showVersion bool
 }
 
 func main() {
 	cfg := config{
-		outdir:     "out",
-		partitions: []string{},
-		workers:    12,
-		act:        ACTION_EXTRACT_PARTITION,
-		_type:      TYPE_BIN,
+		outdir:      "out",
+		partitions:  []string{},
+		workers:     12,
+		act:         ACTION_EXTRACT_PARTITION,
+		_type:       TYPE_BIN,
+		showVersion: false,
 	}
 
 	flag.StringVar(&cfg.input, "i", "", "input payload bin/zip/url")
@@ -55,14 +60,20 @@ func main() {
 		cfg.act = ACTION_SHOW_PARTITION_INFO
 		return nil
 	})
+	flag.BoolVar(&cfg.showVersion, "v", false, "print version and exit")
 
 	flag.Parse()
+
+	if cfg.showVersion {
+		fmt.Println("- Version:", Version)
+		os.Exit(0)
+	}
 
 	if len(cfg.input) == 0 {
 		log.Fatalln("Must spec input file!")
 	}
 
-	var reader io.ReadSeekCloser
+	// Detect input type
 	if strings.HasPrefix(cfg.input, "http://") || strings.HasPrefix(cfg.input, "https://") {
 		cfg._type = TYPE_URL
 	} else {
@@ -85,6 +96,8 @@ func main() {
 		fd.Close()
 	}
 
+	// Adjust reader
+	var reader io.ReadSeekCloser
 	var err error
 
 	switch cfg._type {
@@ -119,6 +132,7 @@ func main() {
 	}
 	defer reader.Close()
 
+	// Do payload action
 	switch cfg.act {
 	case ACTION_EXTRACT_PARTITION:
 		payload_extract.ExtractPartitionsFromPayload(reader, cfg.partitions, cfg.outdir, cfg.workers)
