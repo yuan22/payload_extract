@@ -59,6 +59,7 @@ jobs:
       id: linux-build
       run: |
         vcpkg install --triplet=$VCPKG_TARGET_TRIPLET liblzma
+        go get -u
         cmake -B build -G Ninja -DCMAKE_BUILD_TYPE="Release" -DVCPKG_HOME="$VCPKG_HOME" \
           -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/vcpkg/scripts/buildsystems/vcpkg.cmake" \
           -DVCPKG_TARGET_TRIPLET="x64-linux" \
