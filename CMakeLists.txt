@@ -26,7 +26,7 @@ if (STATIC)
 endif ()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    list(APPEND GO_FLAGS "-ldflags=-s -w ${GO_STATIC_FLAGS} -linkmode=external -X main.Version=${PROJECT_VERSION_FULL}")
+    list(APPEND GO_FLAGS "-ldflags=-w -s ${GO_STATIC_FLAGS} -linkmode=external -X main.Version=${PROJECT_VERSION_FULL}")
 endif()
 
 if (NOT VCPKG_HOME)
@@ -47,8 +47,8 @@ endif()
 
 set(CGO_ENV
     "CGO_ENABLED=1"
-    "CGO_CFLAGS=-O2 -I${LibLZMA_INCLUDE_DIRS}"
-    "CGO_LDFLAGS=-O2 -L${LibLZMA_LIBRARY_DIRS} -llzma"
+    "CGO_CFLAGS=-O3 -I${LibLZMA_INCLUDE_DIRS}"
+    "CGO_LDFLAGS=-O3 -L${LibLZMA_LIBRARY_DIRS} -llzma"
 )
 
 if(NOT GO_BIN) 

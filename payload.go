@@ -14,11 +14,11 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/DataDog/zstd"
 	"github.com/affggh/payload_extract/update_engine"
-	"github.com/klauspost/compress/zstd"
 	"github.com/panjf2000/ants/v2"
+	xz "github.com/remyoudompheng/go-liblzma"
 	"github.com/schollz/progressbar/v3"
-	"github.com/spencercw/go-xz"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -200,17 +200,17 @@ func extractOperationToFile(
 		if *operation.Type == update_engine.InstallOperation_REPLACE_BZ {
 			zreader = bzip2.NewReader(breader)
 		} else if *operation.Type == update_engine.InstallOperation_REPLACE_XZ {
-			xzreader := xz.NewDecompressionReader(breader)
-			zreader = &xzreader
-		} else if *operation.Type == update_engine.InstallOperation_ZSTD {
-			zreader, err = zstd.NewReader(breader)
+			zreader, err = xz.NewReader(breader)
 			if err != nil {
 				return err
 			}
+
+		} else if *operation.Type == update_engine.InstallOperation_ZSTD {
+			zreader = zstd.NewReader(breader)
 		}
 
 		closer, ok := zreader.(io.Closer)
-		if ok { // lzma need close
+		if ok { // lzma, zstd need close
 			defer closer.Close()
 		}
 
