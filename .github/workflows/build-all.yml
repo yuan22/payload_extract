@@ -64,7 +64,8 @@ jobs:
           -DVCPKG_TARGET_TRIPLET="x64-linux" \
           -DVCPKG_HOME="$GITHUB_WORKSPACE/vcpkg" \
           -DSTATIC=ON && cmake --build build --verbose
-        OUTDIR="out/x86_64-linux-$(git rev-parse --short HEAD)/"
+        OUTDIR="out/x86_64-linux-$(git rev-parse --short HEAD)"
+        mkdir -p $OUTDIR
         cp -af build/payload_extract_go $OUTDIR/
       
     - name: Upload linux artifacts
