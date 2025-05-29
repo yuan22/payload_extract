@@ -1,6 +1,10 @@
 # Payload Extract
-Golang impl this, another python impl here:[payload_extract_py](https://github.com/affggh/payload_extract_py)
-
+Golang android payload extraction, another python impl here:[payload_extract_py](https://github.com/affggh/payload_extract_py)
+## Function
+- Support print payload informatoin
+- Support extract from zip or url rom file
+- Multi thread support
+- Native c lzma decompress performance
 # Build
 ## Native
 - Install gcc    
@@ -14,14 +18,33 @@ go build -ldflags="-s -w" -trimpath -o payload_extract_go cmd/main.go
 ```
 
 ## Example build for windows on archlinux
+
 - Install mingw32    
 ```sh
 sudo pacman -S mingw-w64-gcc
 ```
+- Install vcpkg and setup liblzma
+```sh
+vcpkg install --triplet=x64-mingw-static liblzma
+```
 - Build with cross toolchain
 _Example build for windows:_    
 ```sh
-GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ CGO_ENABLED=1 go build -ldflags="-s -w" -trimpath -o payload_extract_go.exe cmd/main.go
+export GOOS=windows
+export GOARCH=amd64
+export CC=x86_64-w64-mingw32-gcc
+export CXX=x86_64-w64-mingw32-g++
+export CGO_ENABLED=1
+
+cmake -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSTATIC=ON \
+  -DVCPKG_HOME=/path/to/vcpkg \
+  -DVCPKG_TARGET_TRIPLET=x64-mingw-static \
+  -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build
+
+# output:build/payload_extract_go.exe
 ```
 
 # Usage
@@ -37,3 +60,9 @@ Usage of ./main:
   -o string
         output directory (default "out")
 ```
+
+# proto copied from
+- [payload_dumper_go](https://github.com/ssut/payload-dumper-go/blob/main/update_metadata.proto)
+
+# Thanks
+- [skkk](https://github.com/sekaiacg)
