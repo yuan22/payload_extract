@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(payload_extract_go VERSION 0.1.1)
+project(payload_extract_go VERSION 0.1.2)
 
 execute_process(
     COMMAND git rev-parse --short HEAD
@@ -8,7 +8,7 @@ execute_process(
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-set(PROJECT_VERSION_FULL "${PROJECT_VERSION}.${GIT_COMMIT_HASH}")
+set(PROJECT_VERSION_FULL "${PROJECT_VERSION}-${GIT_COMMIT_HASH}")
 
 find_package(LibLZMA REQUIRED)
 
@@ -26,7 +26,7 @@ if (STATIC)
 endif ()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    list(APPEND GO_FLAGS "-ldflags=-s -w ${GO_STATIC_FLAGS}")
+    list(APPEND GO_FLAGS "-ldflags=-s -w ${GO_STATIC_FLAGS} -linkmode=external -X main.Version=${PROJECT_VERSION_FULL}")
 endif()
 
 if (NOT VCPKG_HOME)
@@ -51,9 +51,13 @@ set(CGO_ENV
     "CGO_LDFLAGS=-O2 -L${LibLZMA_LIBRARY_DIRS} -llzma"
 )
 
+if(NOT GO_BIN) 
+    set(GO_BIN "go")
+endif()
+
 add_custom_target(build_all ALL
     COMMAND ${CMAKE_COMMAND} -E env ${CGO_ENV}
-        go build ${GO_FLAGS} -o ${CMAKE_BINARY_DIR}/${TARGET_NAME} ${GO_SOURCES}
+        ${GO_BIN} build ${GO_FLAGS} -o ${CMAKE_BINARY_DIR}/${TARGET_NAME} ${GO_SOURCES}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     DEPENDS ${GO_SOURCES}
     COMMENT "Building Go executable with LibLZMA linking"

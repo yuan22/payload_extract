@@ -15,10 +15,11 @@ import (
 	"sync"
 
 	"github.com/affggh/payload_extract/update_engine"
-	"github.com/spencercw/go-xz"
-
+	"github.com/klauspost/compress/zstd"
 	"github.com/panjf2000/ants/v2"
 	"github.com/schollz/progressbar/v3"
+	"github.com/spencercw/go-xz"
+	"google.golang.org/protobuf/proto"
 )
 
 var Logger = log.New(log.Writer(), "payload_extract:", log.Flags())
@@ -85,7 +86,7 @@ func InitPayloadInfo(reader io.ReadSeeker) (*update_engine.DeltaArchiveManifest,
 		return nil, err
 	}
 
-	if err = manifest.Unmarshal(buf); err != nil {
+	if err = proto.Unmarshal(buf, manifest); err != nil {
 		return nil, err
 	}
 
@@ -103,14 +104,14 @@ func InitPayloadInfo(reader io.ReadSeeker) (*update_engine.DeltaArchiveManifest,
 
 func PrintPartitionsInfo(manifest *update_engine.DeltaArchiveManifest, partitions_name []string) {
 	fmt.Println("Payload Info:")
-	fmt.Println("\tPatch Level:", manifest.SecurityPatchLevel)
+	fmt.Println("\tPatch Level:", *manifest.SecurityPatchLevel)
 	fmt.Println("\tBlock Size:", *manifest.BlockSize)
 	fmt.Println("\tMinor Version:", *manifest.MinorVersion)
-	fmt.Println("\tMax Time Stamp:", manifest.MaxTimestamp)
+	fmt.Println("\tMax Time Stamp:", *manifest.MaxTimestamp)
 	fmt.Println("\tApex Info:", len(manifest.ApexInfo))
 	fmt.Println("\t\t", "PackageName", "Version", "IsCompressed", "DecompressedSize")
 	for _, i := range manifest.ApexInfo {
-		fmt.Println("\t\t", i.PackageName, i.Version, i.IsCompressed, i.DecompressedSize)
+		fmt.Println("\t\t", *i.PackageName, *i.Version, *i.IsCompressed, *i.DecompressedSize)
 	}
 	fmt.Println("\tPartitions:", len(manifest.Partitions))
 	fmt.Println("\t\t", "PartitionName", "PartitionSize")
@@ -120,7 +121,7 @@ func PrintPartitionsInfo(manifest *update_engine.DeltaArchiveManifest, partition
 	} else {
 		for _, p := range manifest.Partitions {
 			if slices.ContainsFunc(partitions_name, func(part string) bool {
-				return p.PartitionName == part
+				return *p.PartitionName == part
 			}) {
 				parts = append(parts, p)
 			}
@@ -131,10 +132,10 @@ func PrintPartitionsInfo(manifest *update_engine.DeltaArchiveManifest, partition
 			last_operation, _ := last(p.Operations)
 			last_extents, _ := last(last_operation.DstExtents)
 
-			return int64((last_extents.StartBlock + last_extents.NumBlocks) * uint64(*manifest.BlockSize))
+			return int64((*last_extents.StartBlock + *last_extents.NumBlocks) * uint64(*manifest.BlockSize))
 		}()
 
-		fmt.Printf("\t\t %-14s%d\n", p.PartitionName, partition_size)
+		fmt.Printf("\t\t %-14s%d\n", *p.PartitionName, partition_size)
 	}
 }
 
@@ -174,16 +175,16 @@ func extractOperationToFile(
 	defer wg.Done()
 	var write_len int
 	var err error
-	switch operation.Type {
-	case update_engine.REPLACE:
+	switch *operation.Type {
+	case update_engine.InstallOperation_REPLACE:
 		write_len, err = writer.WriteAt(data, out_offset)
 		if err != nil {
 			return err
 		}
-	case update_engine.ZERO:
+	case update_engine.InstallOperation_ZERO:
 		for _, ext := range operation.GetDstExtents() {
-			out_seek := ext.StartBlock * uint64(block_size)
-			num_blocks := ext.NumBlocks
+			out_seek := *ext.StartBlock * uint64(block_size)
+			num_blocks := *ext.NumBlocks
 
 			xlen, err := write_zero(writer, int64(num_blocks), int64(out_seek))
 			if err != nil {
@@ -191,14 +192,21 @@ func extractOperationToFile(
 			}
 			write_len += int(xlen)
 		}
-	case update_engine.REPLACE_BZ, update_engine.REPLACE_XZ:
+	case update_engine.InstallOperation_REPLACE_BZ,
+		update_engine.InstallOperation_REPLACE_XZ,
+		update_engine.InstallOperation_ZSTD:
 		var zreader io.Reader
 		var breader = bytes.NewReader(data)
-		if operation.Type == update_engine.REPLACE_BZ {
+		if *operation.Type == update_engine.InstallOperation_REPLACE_BZ {
 			zreader = bzip2.NewReader(breader)
-		} else if operation.Type == update_engine.REPLACE_XZ {
+		} else if *operation.Type == update_engine.InstallOperation_REPLACE_XZ {
 			xzreader := xz.NewDecompressionReader(breader)
 			zreader = &xzreader
+		} else if *operation.Type == update_engine.InstallOperation_ZSTD {
+			zreader, err = zstd.NewReader(breader)
+			if err != nil {
+				return err
+			}
 		}
 
 		closer, ok := zreader.(io.Closer)
@@ -245,7 +253,7 @@ func extractPartitionFromPayload(
 
 	operations := partition.Operations
 	sort.Slice(operations, func(i, j int) bool {
-		return operations[i].DataOffset < operations[j].DataOffset
+		return *operations[i].DataOffset < *operations[j].DataOffset
 	})
 
 	var wg sync.WaitGroup
@@ -254,8 +262,8 @@ func extractPartitionFromPayload(
 	//defer p.Release()
 
 	for _, operation := range operations {
-		data_len := operation.DataLength
-		data_offset := operation.DataOffset
+		data_len := *operation.DataLength
+		data_offset := *operation.DataOffset
 
 		reader.Seek(int64(data_offset)-curr_data_offset, io.SeekCurrent)
 
@@ -326,7 +334,7 @@ func ExtractPartitionsFromPayload(
 		all_parts = manifest.Partitions
 	} else {
 		for _, p := range manifest.Partitions {
-			if slices.Contains(partitions_name, p.PartitionName) {
+			if slices.Contains(partitions_name, *p.PartitionName) {
 				all_parts = append(all_parts, p)
 			}
 		}
@@ -346,7 +354,7 @@ func ExtractPartitionsFromPayload(
 			last_operation, _ := last(p.Operations)
 			last_extents, _ := last(last_operation.DstExtents)
 
-			return int64((last_extents.StartBlock + last_extents.NumBlocks) * uint64(block_size))
+			return int64((*last_extents.StartBlock + *last_extents.NumBlocks) * uint64(block_size))
 		}()
 
 		bar := progressbar.NewOptions64(total_length,
@@ -365,8 +373,8 @@ func ExtractPartitionsFromPayload(
 				BarEnd:        "]",
 			}))
 
-		fmt.Println("Extracting", p.PartitionName, "...")
-		err := extractPartitionFromPayload(reader, int(block_size), p, path.Join(out_dir, p.PartitionName+".img"), int(total_length), bar, pool)
+		fmt.Println("Extracting", *p.PartitionName, "...")
+		err := extractPartitionFromPayload(reader, int(block_size), p, path.Join(out_dir, *p.PartitionName+".img"), int(total_length), bar, pool)
 		if err != nil {
 			log.Println(err)
 		}
