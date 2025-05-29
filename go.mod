@@ -2,7 +2,12 @@ module github.com/affggh/payload_extract
 
 go 1.24.2
 
-require github.com/gogo/protobuf v1.3.2
+require (
+	github.com/klauspost/compress v1.18.0
+	google.golang.org/protobuf v1.36.6
+)
+
+require github.com/google/go-cmp v0.6.0 // indirect
 
 require (
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
