@@ -114,4 +114,66 @@ jobs:
         name: linux-binaries
         path: out/x86_64-linux-*/
 
+    - name: Build windows(x86_64) binaries
+      env:
+        CC: x86_64-w64-mingw32-clang
+        GOOS: windows
+        GOARCH: amd64
+        VCPKG_TARGET_TRIPLET: x64-mingw-static
+      run: |
+        vcpkg install --triplet=$VCPKG_TARGET_TRIPLET liblzma
+        go get -u
+        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE="Release" -DVCPKG_HOME="$VCPKG_HOME" \
+          -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+          -DVCPKG_TARGET_TRIPLET="x64-linux" \
+          -DVCPKG_HOME="$GITHUB_WORKSPACE/vcpkg" \
+          -DSTATIC=ON && cmake --build build --verbose
+        OUTDIR="out/x86_64-windows-$(git rev-parse --short HEAD)"
+        mkdir -p $OUTDIR
+        cp -af build/payload_extract_go $OUTDIR/
+        rm -rf build
 
+    - name: Build windows(x86_64) binaries
+      env:
+        CC: x86_64-w64-mingw32-clang
+        GOOS: windows
+        GOARCH: amd64
+        VCPKG_TARGET_TRIPLET: x64-mingw-static
+      run: |
+        vcpkg install --triplet=$VCPKG_TARGET_TRIPLET liblzma
+        go get -u
+        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE="Release" -DVCPKG_HOME="$VCPKG_HOME" \
+          -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+          -DVCPKG_TARGET_TRIPLET="x64-linux" \
+          -DVCPKG_HOME="$GITHUB_WORKSPACE/vcpkg" \
+          -DSTATIC=ON && cmake --build build --verbose
+        OUTDIR="out/x86_64-windows-$(git rev-parse --short HEAD)"
+        mkdir -p $OUTDIR
+        cp -af build/payload_extract_go $OUTDIR/
+        rm -rf build
+
+    - name: Build windows(x86) binaries
+      env:
+        CC: i686-w64-mingw32-clang
+        GOOS: windows
+        GOARCH: 386
+        VCPKG_TARGET_TRIPLET: x86-mingw-static
+      run: |
+        vcpkg install --triplet=$VCPKG_TARGET_TRIPLET liblzma
+        go get -u
+        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE="Release" -DVCPKG_HOME="$VCPKG_HOME" \
+          -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+          -DVCPKG_TARGET_TRIPLET="x64-linux" \
+          -DVCPKG_HOME="$GITHUB_WORKSPACE/vcpkg" \
+          -DSTATIC=ON && cmake --build build --verbose
+        OUTDIR="out/x86-windows-$(git rev-parse --short HEAD)"
+        mkdir -p $OUTDIR
+        cp -af build/payload_extract_go $OUTDIR/
+        rm -rf build
+
+    - name: Upload windows artifacts
+      uses: actions/upload-artifact@v4
+      id: windows-binaries
+      with:
+        name: windows-binaries
+        path: out/x86_64-windows-*/
