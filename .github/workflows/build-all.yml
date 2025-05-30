@@ -28,8 +28,7 @@ jobs:
           gcc-aarch64-linux-gnu
           
         # setup aarch64 musl cross toolachin
-        wget https://musl.cc/aarch64-linux-musl-cross.tgz
-        tar -xzf aarch64-linux-musl-cross.tgz
+        git clone https://github.com/chase535/aarch64-linux-musl-gcc --depth=1
         echo "$GITHUB_WORKSPACE/aarch64-linux-musl-cross/bin" >> $GITHUB_PATH
 
         # setup mingw windows(ucrt) toolchains
