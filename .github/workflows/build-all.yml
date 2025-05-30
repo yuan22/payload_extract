@@ -86,6 +86,7 @@ jobs:
         OUTDIR="out/x86_64-linux-$(git rev-parse --short HEAD)"
         mkdir -p $OUTDIR
         cp -af build/payload_extract_go $OUTDIR/
+        rm -rf build
 
     - name: Build linux(aarch64) binaries
       env:
@@ -101,9 +102,10 @@ jobs:
           -DVCPKG_TARGET_TRIPLET="x64-linux" \
           -DVCPKG_HOME="$GITHUB_WORKSPACE/vcpkg" \
           -DSTATIC=ON && cmake --build build --verbose
-        OUTDIR="out/x86_64-linux-$(git rev-parse --short HEAD)"
+        OUTDIR="out/aarch64-linux-$(git rev-parse --short HEAD)"
         mkdir -p $OUTDIR
         cp -af build/payload_extract_go $OUTDIR/
+        rm -rf build
       
     - name: Upload linux artifacts
       uses: actions/upload-artifact@v4
