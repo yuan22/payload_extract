@@ -24,8 +24,27 @@ jobs:
           cmake \
           ninja-build \
           musl-tools \
-          clang p7zip
+          clang p7zip \
+          gcc-aarch64-linux-gnu
+          
+        # setup aarch64 musl cross toolachin
+        wget https://musl.cc/aarch64-linux-musl-cross.tgz
+        tar -xzf aarch64-linux-musl-cross.tgz
+        echo "$GITHUB_WORKSPACE/aarch64-linux-musl-cross/bin" >> $GITHUB_PATH
 
+        # setup mingw windows(ucrt) toolchains
+        wget https://github.com/mstorsjo/llvm-mingw/releases/download/20250528/llvm-mingw-20250528-ucrt-ubuntu-22.04-x86_64.tar.xz
+        tar -xvf llvm-mingw-20250528-ucrt-ubuntu-22.04-x86_64.tar.xz --strip-components=1 -C llvm-mingw
+        echo "$GITHUB_WORKSPACE/llvm-mingw/bin" >> $GITHUB_PATH
+
+    - name: Cache toolchains
+      uses: actions/cache@v4
+      with:
+        path: |
+          "aarch64-linux-musl-cross"
+          "llvm-mingw"
+        key: ${{ runner.os }}-${{ hashFiles('aarch64-linux-musl-cross.tgz') }}-${{ hashFiles('llvm-mingw-20250528-ucrt-ubuntu-22.04-x86_64.tar.xz') }}
+        
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
@@ -50,13 +69,30 @@ jobs:
         ./vcpkg/bootstrap-vcpkg.sh
         echo "$GITHUB_WORKSPACE/vcpkg" >> $GITHUB_PATH
 
-    - name: Build linux binaries
+    - name: Build linux(x86_64) binaries
       env:
         CC: musl-gcc
         GOOS: linux
         GOARCH: amd64
         VCPKG_TARGET_TRIPLET: x64-linux
-      id: linux-build
+      run: |
+        vcpkg install --triplet=$VCPKG_TARGET_TRIPLET liblzma
+        go get -u
+        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE="Release" -DVCPKG_HOME="$VCPKG_HOME" \
+          -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+          -DVCPKG_TARGET_TRIPLET="x64-linux" \
+          -DVCPKG_HOME="$GITHUB_WORKSPACE/vcpkg" \
+          -DSTATIC=ON && cmake --build build --verbose
+        OUTDIR="out/x86_64-linux-$(git rev-parse --short HEAD)"
+        mkdir -p $OUTDIR
+        cp -af build/payload_extract_go $OUTDIR/
+
+    - name: Build linux(aarch64) binaries
+      env:
+        CC: aarch64-linux-musl-gcc
+        GOOS: linux
+        GOARCH: arm64
+        VCPKG_TARGET_TRIPLET: arm64-linux
       run: |
         vcpkg install --triplet=$VCPKG_TARGET_TRIPLET liblzma
         go get -u
@@ -71,6 +107,9 @@ jobs:
       
     - name: Upload linux artifacts
       uses: actions/upload-artifact@v4
+      id: linux-binaries
       with:
         name: linux-binaries
         path: out/x86_64-linux-*/
+
+
