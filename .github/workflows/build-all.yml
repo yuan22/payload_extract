@@ -33,6 +33,7 @@ jobs:
 
         # setup mingw windows(ucrt) toolchains
         wget https://github.com/mstorsjo/llvm-mingw/releases/download/20250528/llvm-mingw-20250528-ucrt-ubuntu-22.04-x86_64.tar.xz
+        mkdir -p llvm-mingw
         tar -xvf llvm-mingw-20250528-ucrt-ubuntu-22.04-x86_64.tar.xz --strip-components=1 -C llvm-mingw
         echo "$GITHUB_WORKSPACE/llvm-mingw/bin" >> $GITHUB_PATH
 
